@@ -1,0 +1,902 @@
+{
+    "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+        "connections_azureblob_name": {
+            "defaultValue": "azureblob",
+            "type": "String"
+        },
+        "connections_azuretables_name": {
+            "defaultValue": "azuretables",
+            "type": "String"
+        },
+        "workflows_laappnameefp_name": {
+            "defaultValue": "laappnameefp",
+            "type": "String"
+        },
+        "storageAccounts_saappnameefp_name": {
+            "defaultValue": "saappnameefp",
+            "type": "String"
+        }
+    },
+    "variables": {},
+    "resources": [
+        {
+            "type": "Microsoft.Storage/storageAccounts",
+            "apiVersion": "2021-04-01",
+            "name": "[parameters('storageAccounts_saappnameefp_name')]",
+            "location": "eastus",
+            "tags": {
+                "description": "Storage de la app",
+                "enviroment": "DEV"
+            },
+            "sku": {
+                "name": "Standard_LRS",
+                "tier": "Standard"
+            },
+            "kind": "StorageV2",
+            "properties": {
+                "minimumTlsVersion": "TLS1_2",
+                "allowBlobPublicAccess": true,
+                "allowSharedKeyAccess": true,
+                "networkAcls": {
+                    "bypass": "AzureServices",
+                    "virtualNetworkRules": [],
+                    "ipRules": [],
+                    "defaultAction": "Allow"
+                },
+                "supportsHttpsTrafficOnly": true,
+                "encryption": {
+                    "services": {
+                        "file": {
+                            "keyType": "Account",
+                            "enabled": true
+                        },
+                        "blob": {
+                            "keyType": "Account",
+                            "enabled": true
+                        }
+                    },
+                    "keySource": "Microsoft.Storage"
+                },
+                "accessTier": "Hot"
+            }
+        },
+        {
+            "type": "Microsoft.Web/connections",
+            "apiVersion": "2016-06-01",
+            "name": "[parameters('connections_azureblob_name')]",
+            "location": "eastus",
+            "kind": "V1",
+            "properties": {
+                "displayName": "cnappblob",
+                "customParameterValues": {},
+                "api": {
+                    "id": "[concat('/subscriptions/ca9fa04a-6863-47c5-a332-863394306cd8/providers/Microsoft.Web/locations/eastus/managedApis/', parameters('connections_azureblob_name'))]"
+                }
+            }
+        },
+        {
+            "type": "Microsoft.Web/connections",
+            "apiVersion": "2016-06-01",
+            "name": "[parameters('connections_azuretables_name')]",
+            "location": "eastus",
+            "kind": "V1",
+            "properties": {
+                "displayName": "cnapptables",
+                "customParameterValues": {},
+                "api": {
+                    "id": "[concat('/subscriptions/ca9fa04a-6863-47c5-a332-863394306cd8/providers/Microsoft.Web/locations/eastus/managedApis/', parameters('connections_azuretables_name'))]"
+                }
+            }
+        },
+        {
+            "type": "Microsoft.Storage/storageAccounts/blobServices",
+            "apiVersion": "2021-04-01",
+            "name": "[concat(parameters('storageAccounts_saappnameefp_name'), '/default')]",
+            "dependsOn": [
+                "[resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccounts_saappnameefp_name'))]"
+            ],
+            "sku": {
+                "name": "Standard_LRS",
+                "tier": "Standard"
+            },
+            "properties": {
+                "changeFeed": {
+                    "enabled": false
+                },
+                "restorePolicy": {
+                    "enabled": false
+                },
+                "containerDeleteRetentionPolicy": {
+                    "enabled": true,
+                    "days": 7
+                },
+                "cors": {
+                    "corsRules": []
+                },
+                "deleteRetentionPolicy": {
+                    "enabled": true,
+                    "days": 7
+                },
+                "isVersioningEnabled": false
+            }
+        },
+        {
+            "type": "Microsoft.Storage/storageAccounts/tableServices",
+            "apiVersion": "2021-04-01",
+            "name": "[concat(parameters('storageAccounts_saappnameefp_name'), '/default')]",
+            "dependsOn": [
+                "[resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccounts_saappnameefp_name'))]"
+            ],
+            "properties": {
+                "cors": {
+                    "corsRules": []
+                }
+            }
+        },
+        {
+            "type": "Microsoft.Logic/workflows",
+            "apiVersion": "2017-07-01",
+            "name": "[parameters('workflows_laappnameefp_name')]",
+            "location": "eastus",
+            "dependsOn": [
+                "[resourceId('Microsoft.Web/connections', parameters('connections_azureblob_name'))]",
+                "[resourceId('Microsoft.Web/connections', parameters('connections_azuretables_name'))]"
+            ],
+            "tags": {
+                "description": "logicApp de la app",
+                "enviroment": "DEV"
+            },
+            "properties": {
+                "state": "Enabled",
+                "definition": {
+                    "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+                    "contentVersion": "1.0.0.0",
+                    "parameters": {
+                        "$connections": {
+                            "defaultValue": {},
+                            "type": "Object"
+                        }
+                    },
+                    "triggers": {
+                        "Recurrence": {
+                            "recurrence": {
+                                "frequency": "Week",
+                                "interval": 1,
+                                "schedule": {
+                                    "hours": [
+                                        "6"
+                                    ],
+                                    "weekDays": [
+                                        "Monday",
+                                        "Tuesday",
+                                        "Wednesday",
+                                        "Thursday",
+                                        "Friday"
+                                    ]
+                                }
+                            },
+                            "type": "Recurrence"
+                        }
+                    },
+                    "actions": {
+                        "For_each": {
+                            "foreach": "@body('List_blobs')?['value']",
+                            "actions": {
+                                "Education": {
+                                    "actions": {
+                                        "CSVAjuste": {
+                                            "runAfter": {
+                                                "Get_blob_content_using_path": [
+                                                    "Succeeded"
+                                                ]
+                                            },
+                                            "type": "Compose",
+                                            "inputs": "@split(body('Get_blob_content_using_path'),decodeUriComponent('%0D%0A'))"
+                                        },
+                                        "CSVNoEncabezado": {
+                                            "runAfter": {
+                                                "CSVAjuste": [
+                                                    "Succeeded"
+                                                ]
+                                            },
+                                            "type": "Compose",
+                                            "inputs": "@skip(outputs('CSVAjuste'),1)"
+                                        },
+                                        "Copy_blob": {
+                                            "runAfter": {
+                                                "RecorrerCSV": [
+                                                    "Succeeded"
+                                                ]
+                                            },
+                                            "type": "ApiConnection",
+                                            "inputs": {
+                                                "host": {
+                                                    "connection": {
+                                                        "name": "@parameters('$connections')['azureblob']['connectionId']"
+                                                    }
+                                                },
+                                                "method": "post",
+                                                "path": "/datasets/default/copyFile",
+                                                "queries": {
+                                                    "destination": "/histcsv",
+                                                    "overwrite": true,
+                                                    "queryParametersSingleEncoded": true,
+                                                    "source": "@items('For_each')?['Path']"
+                                                }
+                                            }
+                                        },
+                                        "Delete_blob": {
+                                            "runAfter": {
+                                                "Copy_blob": [
+                                                    "Succeeded"
+                                                ]
+                                            },
+                                            "type": "ApiConnection",
+                                            "inputs": {
+                                                "host": {
+                                                    "connection": {
+                                                        "name": "@parameters('$connections')['azureblob']['connectionId']"
+                                                    }
+                                                },
+                                                "method": "delete",
+                                                "path": "/datasets/default/files/@{encodeURIComponent(encodeURIComponent(items('For_each')?['Path']))}"
+                                            }
+                                        },
+                                        "Get_blob_content_using_path": {
+                                            "runAfter": {},
+                                            "type": "ApiConnection",
+                                            "inputs": {
+                                                "host": {
+                                                    "connection": {
+                                                        "name": "@parameters('$connections')['azureblob']['connectionId']"
+                                                    }
+                                                },
+                                                "method": "get",
+                                                "path": "/datasets/default/GetFileContentByPath",
+                                                "queries": {
+                                                    "inferContentType": true,
+                                                    "path": "@items('For_each')?['Path']",
+                                                    "queryParametersSingleEncoded": true
+                                                }
+                                            }
+                                        },
+                                        "RecorrerCSV": {
+                                            "foreach": "@outputs('CSVNoEncabezado')",
+                                            "actions": {
+                                                "CSVSeparador": {
+                                                    "runAfter": {},
+                                                    "type": "Compose",
+                                                    "inputs": "@split(item(),'|')"
+                                                },
+                                                "Validar_Null": {
+                                                    "actions": {
+                                                        "Compose_2": {
+                                                            "runAfter": {},
+                                                            "type": "Compose",
+                                                            "inputs": {
+                                                                "PartitionKey": "@{toUpper(outputs('CSVSeparador')?[0])}",
+                                                                "RowKey": "@{toUpper(outputs('CSVSeparador')?[1])}"
+                                                            }
+                                                        },
+                                                        "Insert_or_Merge_Entity": {
+                                                            "runAfter": {
+                                                                "Compose_2": [
+                                                                    "Succeeded"
+                                                                ]
+                                                            },
+                                                            "type": "ApiConnection",
+                                                            "inputs": {
+                                                                "body": {
+                                                                    "PartitionKey": "@{toUpper(outputs('CSVSeparador')?[0])}",
+                                                                    "RowKey": "@{toUpper(outputs('CSVSeparador')?[1])}"
+                                                                },
+                                                                "host": {
+                                                                    "connection": {
+                                                                        "name": "@parameters('$connections')['azuretables']['connectionId']"
+                                                                    }
+                                                                },
+                                                                "method": "patch",
+                                                                "path": "/Tables/@{encodeURIComponent('Education')}/entities(PartitionKey='@{encodeURIComponent(toUpper(outputs('CSVSeparador')?[0]))}',RowKey='@{encodeURIComponent(toUpper(outputs('CSVSeparador')?[1]))}')"
+                                                            }
+                                                        }
+                                                    },
+                                                    "runAfter": {
+                                                        "CSVSeparador": [
+                                                            "Succeeded"
+                                                        ]
+                                                    },
+                                                    "expression": {
+                                                        "and": [
+                                                            {
+                                                                "not": {
+                                                                    "equals": [
+                                                                        "@empty(outputs('CSVSeparador')?[0])",
+                                                                        true
+                                                                    ]
+                                                                }
+                                                            },
+                                                            {
+                                                                "not": {
+                                                                    "equals": [
+                                                                        "@empty(outputs('CSVSeparador')?[1])",
+                                                                        true
+                                                                    ]
+                                                                }
+                                                            }
+                                                        ]
+                                                    },
+                                                    "type": "If"
+                                                }
+                                            },
+                                            "runAfter": {
+                                                "CSVNoEncabezado": [
+                                                    "Succeeded"
+                                                ]
+                                            },
+                                            "type": "Foreach"
+                                        }
+                                    },
+                                    "runAfter": {},
+                                    "else": {
+                                        "actions": {
+                                            "Experience": {
+                                                "actions": {
+                                                    "CSVAjuste_2": {
+                                                        "runAfter": {
+                                                            "Set_variable": [
+                                                                "Succeeded"
+                                                            ]
+                                                        },
+                                                        "type": "Compose",
+                                                        "inputs": "@split(body('Get_blob_content_using_path_2'),decodeUriComponent('%0D%0A'))"
+                                                    },
+                                                    "CSVNoEncabezado_2": {
+                                                        "runAfter": {
+                                                            "CSVAjuste_2": [
+                                                                "Succeeded"
+                                                            ]
+                                                        },
+                                                        "type": "Compose",
+                                                        "inputs": "@skip(outputs('CSVAjuste_2'),1)"
+                                                    },
+                                                    "Copy_blob_2": {
+                                                        "runAfter": {
+                                                            "RecorrerCSV_2": [
+                                                                "TimedOut",
+                                                                "Skipped",
+                                                                "Succeeded"
+                                                            ]
+                                                        },
+                                                        "type": "ApiConnection",
+                                                        "inputs": {
+                                                            "host": {
+                                                                "connection": {
+                                                                    "name": "@parameters('$connections')['azureblob']['connectionId']"
+                                                                }
+                                                            },
+                                                            "method": "post",
+                                                            "path": "/datasets/default/copyFile",
+                                                            "queries": {
+                                                                "destination": "/histcsv",
+                                                                "overwrite": true,
+                                                                "queryParametersSingleEncoded": true,
+                                                                "source": "@items('For_each')?['Path']"
+                                                            }
+                                                        }
+                                                    },
+                                                    "Delete_blob_2": {
+                                                        "runAfter": {
+                                                            "Copy_blob_2": [
+                                                                "Succeeded"
+                                                            ]
+                                                        },
+                                                        "type": "ApiConnection",
+                                                        "inputs": {
+                                                            "host": {
+                                                                "connection": {
+                                                                    "name": "@parameters('$connections')['azureblob']['connectionId']"
+                                                                }
+                                                            },
+                                                            "method": "delete",
+                                                            "path": "/datasets/default/files/@{encodeURIComponent(encodeURIComponent(items('For_each')?['Path']))}"
+                                                        }
+                                                    },
+                                                    "Get_blob_content_using_path_2": {
+                                                        "runAfter": {},
+                                                        "type": "ApiConnection",
+                                                        "inputs": {
+                                                            "host": {
+                                                                "connection": {
+                                                                    "name": "@parameters('$connections')['azureblob']['connectionId']"
+                                                                }
+                                                            },
+                                                            "method": "get",
+                                                            "path": "/datasets/default/GetFileContentByPath",
+                                                            "queries": {
+                                                                "inferContentType": true,
+                                                                "path": "@items('For_each')?['Path']",
+                                                                "queryParametersSingleEncoded": true
+                                                            }
+                                                        }
+                                                    },
+                                                    "Get_entities": {
+                                                        "runAfter": {
+                                                            "Get_blob_content_using_path_2": [
+                                                                "Succeeded"
+                                                            ]
+                                                        },
+                                                        "type": "ApiConnection",
+                                                        "inputs": {
+                                                            "host": {
+                                                                "connection": {
+                                                                    "name": "@parameters('$connections')['azuretables']['connectionId']"
+                                                                }
+                                                            },
+                                                            "method": "get",
+                                                            "path": "/Tables/@{encodeURIComponent('Experience')}/entities"
+                                                        }
+                                                    },
+                                                    "RecorrerCSV_2": {
+                                                        "foreach": "@outputs('CSVNoEncabezado_2')",
+                                                        "actions": {
+                                                            "CSVSeparador_2": {
+                                                                "runAfter": {},
+                                                                "type": "Compose",
+                                                                "inputs": "@split(item(),'|')"
+                                                            },
+                                                            "Validar_Null_2": {
+                                                                "actions": {
+                                                                    "Increment_variable_2": {
+                                                                        "runAfter": {
+                                                                            "Insert_Entity": [
+                                                                                "Succeeded"
+                                                                            ]
+                                                                        },
+                                                                        "type": "IncrementVariable",
+                                                                        "inputs": {
+                                                                            "name": "Contador",
+                                                                            "value": 1
+                                                                        }
+                                                                    },
+                                                                    "Insert_Entity": {
+                                                                        "runAfter": {
+                                                                            "test2": [
+                                                                                "Succeeded"
+                                                                            ]
+                                                                        },
+                                                                        "type": "ApiConnection",
+                                                                        "inputs": {
+                                                                            "body": {
+                                                                                "PartitionKey": "@{toUpper(outputs('CSVSeparador_2')?[0])}",
+                                                                                "ROL": "@{toUpper(outputs('CSVSeparador_2')?[1])}",
+                                                                                "RowKey": "@{variables('Contador')}"
+                                                                            },
+                                                                            "host": {
+                                                                                "connection": {
+                                                                                    "name": "@parameters('$connections')['azuretables']['connectionId']"
+                                                                                }
+                                                                            },
+                                                                            "method": "post",
+                                                                            "path": "/Tables/@{encodeURIComponent('Experience')}/entities"
+                                                                        }
+                                                                    },
+                                                                    "test2": {
+                                                                        "runAfter": {},
+                                                                        "type": "Compose",
+                                                                        "inputs": {
+                                                                            "PartitionKey": "@{toUpper(outputs('CSVSeparador_2')?[0])}",
+                                                                            "ROL": "@{toUpper(outputs('CSVSeparador_2')?[1])}",
+                                                                            "RowKey": "@{variables('Contador')}"
+                                                                        }
+                                                                    }
+                                                                },
+                                                                "runAfter": {
+                                                                    "CSVSeparador_2": [
+                                                                        "Succeeded"
+                                                                    ]
+                                                                },
+                                                                "expression": {
+                                                                    "and": [
+                                                                        {
+                                                                            "not": {
+                                                                                "equals": [
+                                                                                    "@empty(outputs('CSVSeparador_2')?[0])",
+                                                                                    true
+                                                                                ]
+                                                                            }
+                                                                        },
+                                                                        {
+                                                                            "not": {
+                                                                                "equals": [
+                                                                                    "@empty(outputs('CSVSeparador_2')?[1])",
+                                                                                    true
+                                                                                ]
+                                                                            }
+                                                                        }
+                                                                    ]
+                                                                },
+                                                                "type": "If"
+                                                            }
+                                                        },
+                                                        "runAfter": {
+                                                            "CSVNoEncabezado_2": [
+                                                                "Succeeded"
+                                                            ]
+                                                        },
+                                                        "type": "Foreach"
+                                                    },
+                                                    "Set_variable": {
+                                                        "runAfter": {
+                                                            "Size_tabla_experiencia": [
+                                                                "Succeeded"
+                                                            ]
+                                                        },
+                                                        "type": "SetVariable",
+                                                        "inputs": {
+                                                            "name": "Contador",
+                                                            "value": "@add(int(outputs('Size_tabla_experiencia')),1)"
+                                                        }
+                                                    },
+                                                    "Size_tabla_experiencia": {
+                                                        "runAfter": {
+                                                            "Get_entities": [
+                                                                "Succeeded"
+                                                            ]
+                                                        },
+                                                        "type": "Compose",
+                                                        "inputs": "@length(body('Get_entities')?['value'])"
+                                                    }
+                                                },
+                                                "runAfter": {},
+                                                "else": {
+                                                    "actions": {
+                                                        "Skills": {
+                                                            "actions": {
+                                                                "CSVAjuste_3": {
+                                                                    "runAfter": {
+                                                                        "Get_blob_content_using_path_3": [
+                                                                            "Succeeded"
+                                                                        ]
+                                                                    },
+                                                                    "type": "Compose",
+                                                                    "inputs": "@split(body('Get_blob_content_using_path_3'),decodeUriComponent('%0D%0A'))"
+                                                                },
+                                                                "CSVNoEncabezado_3": {
+                                                                    "runAfter": {
+                                                                        "CSVAjuste_3": [
+                                                                            "Succeeded"
+                                                                        ]
+                                                                    },
+                                                                    "type": "Compose",
+                                                                    "inputs": "@skip(outputs('CSVAjuste_3'),1)"
+                                                                },
+                                                                "Copy_blob_3": {
+                                                                    "runAfter": {
+                                                                        "RecorrerCSV_3": [
+                                                                            "Succeeded"
+                                                                        ]
+                                                                    },
+                                                                    "type": "ApiConnection",
+                                                                    "inputs": {
+                                                                        "host": {
+                                                                            "connection": {
+                                                                                "name": "@parameters('$connections')['azureblob']['connectionId']"
+                                                                            }
+                                                                        },
+                                                                        "method": "post",
+                                                                        "path": "/datasets/default/copyFile",
+                                                                        "queries": {
+                                                                            "destination": "/histcsv",
+                                                                            "overwrite": true,
+                                                                            "queryParametersSingleEncoded": true,
+                                                                            "source": "@items('For_each')?['Path']"
+                                                                        }
+                                                                    }
+                                                                },
+                                                                "Delete_blob_3": {
+                                                                    "runAfter": {
+                                                                        "Copy_blob_3": [
+                                                                            "Succeeded"
+                                                                        ]
+                                                                    },
+                                                                    "type": "ApiConnection",
+                                                                    "inputs": {
+                                                                        "host": {
+                                                                            "connection": {
+                                                                                "name": "@parameters('$connections')['azureblob']['connectionId']"
+                                                                            }
+                                                                        },
+                                                                        "method": "delete",
+                                                                        "path": "/datasets/default/files/@{encodeURIComponent(encodeURIComponent(items('For_each')?['Path']))}"
+                                                                    }
+                                                                },
+                                                                "Get_blob_content_using_path_3": {
+                                                                    "runAfter": {},
+                                                                    "type": "ApiConnection",
+                                                                    "inputs": {
+                                                                        "host": {
+                                                                            "connection": {
+                                                                                "name": "@parameters('$connections')['azureblob']['connectionId']"
+                                                                            }
+                                                                        },
+                                                                        "method": "get",
+                                                                        "path": "/datasets/default/GetFileContentByPath",
+                                                                        "queries": {
+                                                                            "inferContentType": true,
+                                                                            "path": "@items('For_each')?['Path']",
+                                                                            "queryParametersSingleEncoded": true
+                                                                        }
+                                                                    }
+                                                                },
+                                                                "RecorrerCSV_3": {
+                                                                    "foreach": "@outputs('CSVNoEncabezado_3')",
+                                                                    "actions": {
+                                                                        "CSVSeparador_3": {
+                                                                            "runAfter": {},
+                                                                            "type": "Compose",
+                                                                            "inputs": "@split(item(),'|')"
+                                                                        },
+                                                                        "Validar_Null_3": {
+                                                                            "actions": {
+                                                                                "Compose": {
+                                                                                    "runAfter": {},
+                                                                                    "type": "Compose",
+                                                                                    "inputs": {
+                                                                                        "LEVEL": "@{toUpper(outputs('CSVSeparador_3')?[2])}",
+                                                                                        "PartitionKey": "@{toUpper(outputs('CSVSeparador_3')?[1])}",
+                                                                                        "RowKey": "@{toUpper(outputs('CSVSeparador_3')?[0])}"
+                                                                                    }
+                                                                                },
+                                                                                "Insert_or_Merge_Entity_2": {
+                                                                                    "runAfter": {
+                                                                                        "Compose": [
+                                                                                            "Succeeded"
+                                                                                        ]
+                                                                                    },
+                                                                                    "type": "ApiConnection",
+                                                                                    "inputs": {
+                                                                                        "body": {
+                                                                                            "LEVEL": "@{toUpper(outputs('CSVSeparador_3')?[2])}",
+                                                                                            "PartitionKey": "@{toUpper(outputs('CSVSeparador_3')?[1])}",
+                                                                                            "RowKey": "@{toUpper(outputs('CSVSeparador_3')?[0])}"
+                                                                                        },
+                                                                                        "host": {
+                                                                                            "connection": {
+                                                                                                "name": "@parameters('$connections')['azuretables']['connectionId']"
+                                                                                            }
+                                                                                        },
+                                                                                        "method": "patch",
+                                                                                        "path": "/Tables/@{encodeURIComponent('Skills')}/entities(PartitionKey='@{encodeURIComponent(toUpper(outputs('CSVSeparador_3')?[1]))}',RowKey='@{encodeURIComponent(toUpper(outputs('CSVSeparador_3')?[0]))}')"
+                                                                                    }
+                                                                                }
+                                                                            },
+                                                                            "runAfter": {
+                                                                                "CSVSeparador_3": [
+                                                                                    "Succeeded"
+                                                                                ]
+                                                                            },
+                                                                            "expression": {
+                                                                                "and": [
+                                                                                    {
+                                                                                        "not": {
+                                                                                            "equals": [
+                                                                                                "@empty(outputs('CSVSeparador_3')?[0])",
+                                                                                                true
+                                                                                            ]
+                                                                                        }
+                                                                                    },
+                                                                                    {
+                                                                                        "not": {
+                                                                                            "equals": [
+                                                                                                "@empty(outputs('CSVSeparador_3')?[1])",
+                                                                                                true
+                                                                                            ]
+                                                                                        }
+                                                                                    }
+                                                                                ]
+                                                                            },
+                                                                            "type": "If"
+                                                                        }
+                                                                    },
+                                                                    "runAfter": {
+                                                                        "CSVNoEncabezado_3": [
+                                                                            "Succeeded"
+                                                                        ]
+                                                                    },
+                                                                    "type": "Foreach"
+                                                                }
+                                                            },
+                                                            "runAfter": {},
+                                                            "expression": {
+                                                                "and": [
+                                                                    {
+                                                                        "contains": [
+                                                                            "@items('For_each')?['Path']",
+                                                                            "Skills"
+                                                                        ]
+                                                                    }
+                                                                ]
+                                                            },
+                                                            "type": "If"
+                                                        }
+                                                    }
+                                                },
+                                                "expression": {
+                                                    "and": [
+                                                        {
+                                                            "contains": [
+                                                                "@items('For_each')?['Path']",
+                                                                "Experience"
+                                                            ]
+                                                        }
+                                                    ]
+                                                },
+                                                "type": "If"
+                                            }
+                                        }
+                                    },
+                                    "expression": {
+                                        "and": [
+                                            {
+                                                "contains": [
+                                                    "@items('For_each')?['Path']",
+                                                    "Education"
+                                                ]
+                                            }
+                                        ]
+                                    },
+                                    "type": "If"
+                                }
+                            },
+                            "runAfter": {
+                                "List_blobs": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "type": "Foreach"
+                        },
+                        "Incremental": {
+                            "runAfter": {},
+                            "type": "InitializeVariable",
+                            "inputs": {
+                                "variables": [
+                                    {
+                                        "name": "Contador",
+                                        "type": "integer",
+                                        "value": 1
+                                    }
+                                ]
+                            }
+                        },
+                        "List_blobs": {
+                            "runAfter": {
+                                "Incremental": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "metadata": {
+                                "JTJmZW50cmFkYQ==": "/repocsv",
+                                "JTJmcmVwb2Nzdg==": "/repocsv"
+                            },
+                            "type": "ApiConnection",
+                            "inputs": {
+                                "host": {
+                                    "connection": {
+                                        "name": "@parameters('$connections')['azureblob']['connectionId']"
+                                    }
+                                },
+                                "method": "get",
+                                "path": "/datasets/default/foldersV2/@{encodeURIComponent(encodeURIComponent('JTJmcmVwb2Nzdg=='))}",
+                                "queries": {
+                                    "nextPageMarker": "",
+                                    "useFlatListing": false
+                                }
+                            }
+                        }
+                    },
+                    "outputs": {}
+                },
+                "parameters": {
+                    "$connections": {
+                        "value": {
+                            "azureblob": {
+                                "connectionId": "[resourceId('Microsoft.Web/connections', parameters('connections_azureblob_name'))]",
+                                "connectionName": "azureblob",
+                                "id": "/subscriptions/ca9fa04a-6863-47c5-a332-863394306cd8/providers/Microsoft.Web/locations/eastus/managedApis/azureblob"
+                            },
+                            "azuretables": {
+                                "connectionId": "[resourceId('Microsoft.Web/connections', parameters('connections_azuretables_name'))]",
+                                "connectionName": "azuretables",
+                                "id": "/subscriptions/ca9fa04a-6863-47c5-a332-863394306cd8/providers/Microsoft.Web/locations/eastus/managedApis/azuretables"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        {
+            "type": "Microsoft.Storage/storageAccounts/blobServices/containers",
+            "apiVersion": "2021-04-01",
+            "name": "[concat(parameters('storageAccounts_saappnameefp_name'), '/default/histcsv')]",
+            "dependsOn": [
+                "[resourceId('Microsoft.Storage/storageAccounts/blobServices', parameters('storageAccounts_saappnameefp_name'), 'default')]",
+                "[resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccounts_saappnameefp_name'))]"
+            ],
+            "properties": {
+                "defaultEncryptionScope": "$account-encryption-key",
+                "denyEncryptionScopeOverride": false,
+                "publicAccess": "None"
+            }
+        },
+        {
+            "type": "Microsoft.Storage/storageAccounts/blobServices/containers",
+            "apiVersion": "2021-04-01",
+            "name": "[concat(parameters('storageAccounts_saappnameefp_name'), '/default/repocsv')]",
+            "dependsOn": [
+                "[resourceId('Microsoft.Storage/storageAccounts/blobServices', parameters('storageAccounts_saappnameefp_name'), 'default')]",
+                "[resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccounts_saappnameefp_name'))]"
+            ],
+            "properties": {
+                "defaultEncryptionScope": "$account-encryption-key",
+                "denyEncryptionScopeOverride": false,
+                "publicAccess": "None"
+            }
+        },
+        {
+            "type": "Microsoft.Storage/storageAccounts/tableServices/tables",
+            "apiVersion": "2021-04-01",
+            "name": "[concat(parameters('storageAccounts_saappnameefp_name'), '/default/Cells')]",
+            "dependsOn": [
+                "[resourceId('Microsoft.Storage/storageAccounts/tableServices', parameters('storageAccounts_saappnameefp_name'), 'default')]",
+                "[resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccounts_saappnameefp_name'))]"
+            ]
+        },
+        {
+            "type": "Microsoft.Storage/storageAccounts/tableServices/tables",
+            "apiVersion": "2021-04-01",
+            "name": "[concat(parameters('storageAccounts_saappnameefp_name'), '/default/Contributor')]",
+            "dependsOn": [
+                "[resourceId('Microsoft.Storage/storageAccounts/tableServices', parameters('storageAccounts_saappnameefp_name'), 'default')]",
+                "[resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccounts_saappnameefp_name'))]"
+            ]
+        },
+        {
+            "type": "Microsoft.Storage/storageAccounts/tableServices/tables",
+            "apiVersion": "2021-04-01",
+            "name": "[concat(parameters('storageAccounts_saappnameefp_name'), '/default/Education')]",
+            "dependsOn": [
+                "[resourceId('Microsoft.Storage/storageAccounts/tableServices', parameters('storageAccounts_saappnameefp_name'), 'default')]",
+                "[resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccounts_saappnameefp_name'))]"
+            ]
+        },
+        {
+            "type": "Microsoft.Storage/storageAccounts/tableServices/tables",
+            "apiVersion": "2021-04-01",
+            "name": "[concat(parameters('storageAccounts_saappnameefp_name'), '/default/Experience')]",
+            "dependsOn": [
+                "[resourceId('Microsoft.Storage/storageAccounts/tableServices', parameters('storageAccounts_saappnameefp_name'), 'default')]",
+                "[resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccounts_saappnameefp_name'))]"
+            ]
+        },
+        {
+            "type": "Microsoft.Storage/storageAccounts/tableServices/tables",
+            "apiVersion": "2021-04-01",
+            "name": "[concat(parameters('storageAccounts_saappnameefp_name'), '/default/Points')]",
+            "dependsOn": [
+                "[resourceId('Microsoft.Storage/storageAccounts/tableServices', parameters('storageAccounts_saappnameefp_name'), 'default')]",
+                "[resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccounts_saappnameefp_name'))]"
+            ]
+        },
+        {
+            "type": "Microsoft.Storage/storageAccounts/tableServices/tables",
+            "apiVersion": "2021-04-01",
+            "name": "[concat(parameters('storageAccounts_saappnameefp_name'), '/default/Skills')]",
+            "dependsOn": [
+                "[resourceId('Microsoft.Storage/storageAccounts/tableServices', parameters('storageAccounts_saappnameefp_name'), 'default')]",
+                "[resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccounts_saappnameefp_name'))]"
+            ]
+        }
+    ]
+}
